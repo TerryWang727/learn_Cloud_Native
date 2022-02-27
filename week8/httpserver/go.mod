@@ -1,3 +1,3 @@
-module Week8
+module httpserver
 
 go 1.23
