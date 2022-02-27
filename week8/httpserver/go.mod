@@ -1,3 +1,3 @@
-module Week2
+module Week8
 
 go 1.23
