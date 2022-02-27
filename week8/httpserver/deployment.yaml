@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudnative-httpserver
+  labels:
+    app: cloudnative-httpserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+    app: cloudnative-httpserver
+  strategy:
+    rollingUpdate:
+      # 没有配置成默认的 25% 是因为避免在单节点场景下，只有1个实例时无法滚动更新。
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+      app: httpserver
+    spec:
+      imagePullSecrets:
+      - name: cloudnative-httpserver
+      containers:
+      - name: httpserver
+      image: wxk-k8s/httpserver:0.0.1
+      ports:
+      - containerPort: 2022
+      # 存活探针、就绪探针、启动探针
+      livenessProbe:
+        failureThreshold: 2
+        httpGet:
+          path: /healthz
+          port: http
+          scheme: HTTP
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 1
+      readinessProbe:
+        failureThreshold: 2
+        httpGet:
+          path: /healthz
+          port: http
+          scheme: HTTP
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 1
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: http
+          scheme: HTTP
+        initialDelaySeconds: 1
+        failureThreshold: 30
+        successThreshold: 1
+        periodSeconds: 10
+        timeoutSeconds: 1
+      # 模拟一个PreStop Hook
+      lifecycle:
+        preStop:
+          exec:
+            command: ["/bin/sh","-c","killall httpserver"]
+      # 资源需求
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      volumeMounts:
+        - mountPath: /etc/httpserver
+          name: config
+  dnsPolicy: ClusterFirst
+  # 优雅终止最长等待时间
+  terminationGracePeriodSeconds: 60
+  # 配置亲和性 保证多个pod不调度到同一个节点
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: "app"
+                operator: In
+                values:
+                  - cloudnative-httpserver
+          topologyKey: "kubernetes.io/hostname"
