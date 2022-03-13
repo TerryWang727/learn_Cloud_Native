@@ -48,7 +48,7 @@ func CreateExecutionTimeMetric(namespace string, help string) *prometheus.Histog
 	return prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: namespace,
-			Name:      "execution_latency_seconds",
+			Name:      "execution_latency_seconds", // mtrics name in prometheus
 			Help:      help,
 			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 15),
 		}, []string{"step"},
