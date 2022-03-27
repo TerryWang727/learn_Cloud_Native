@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudnative-httpserver
+  labels:
+    app: cloudnative-httpserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+    app: cloudnative-httpserver
+  strategy:
+    rollingUpdate:
+      # 没有配置成默认的 25% 是因为避免在单节点场景下，只有1个实例时无法滚动更新。
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+      app: httpserver
+    spec:
+      imagePullSecrets:
+      - name: cloudnative-httpserver
+      containers:
+      - name: httpserver
+      image: wxk-k8s/httpserver:0.0.1
+      ports:
+      - containerPort: 2022
+      # 存活探针、就绪探针、启动探针
+      livenessProbe:
+        failureThreshold: 2
+        httpGet:
+          path: /healthz
+          port: http
+          scheme: HTTP
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 1
+      readinessProbe:
+        failureThreshold: 2
+        httpGet:
+          path: /healthz
+          port: http
+          scheme: HTTP
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 1
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: http
+          scheme: HTTP
+        initialDelaySeconds: 1
+        failureThreshold: 30
+        successThreshold: 1
+        periodSeconds: 10
+        timeoutSeconds: 1
+      # 模拟一个PreStop Hook
+      lifecycle:
+        preStop:
+          exec:
+            command: ["/bin/sh","-c","killall httpserver"]
+      # 资源需求
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      volumeMounts:
+        - mountPath: /etc/httpserver
+          name: config
+  dnsPolicy: ClusterFirst
+  # 优雅终止最长等待时间
+  terminationGracePeriodSeconds: 60
+  # 配置亲和性 保证多个pod不调度到同一个节点
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: "app"
+                operator: In
+                values:
+                  - cloudnative-httpserver
+          topologyKey: "kubernetes.io/hostname"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  tls:
+    - hosts:
+        - httpserver.com
+      secretName: httpserver-tls
+  rules:
+    - host: httpserver.com
+      http:
+        paths:
+          - path: "/"
+            pathType: Prefix
+            backend:
+              service:
+                name: httpserver
+                port:
+                  number: 80
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: httpserver-tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURQVENDQWlXZ0F3SUJBZ0lVRTUvOE5neTlOclMzbW40QXlMWUQrY3k0MEZvd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0xqRVhNQlVHQTFVRUF3d09hSFIwY0hObGNuWmxjaTVqYjIweEV6QVJCZ05WQkFvTUNtaDBkSEJ6WlhKMgpaWEl3SGhjTk1qSXdNekExTVRjMU1USXpXaGNOTWpNd016QTFNVGMxTVRJeldqQXVNUmN3RlFZRFZRUUREQTVvCmRIUndjMlZ5ZG1WeUxtTnZiVEVUTUJFR0ExVUVDZ3dLYUhSMGNITmxjblpsY2pDQ0FTSXdEUVlKS29aSWh2Y04KQVFFQkJRQURnZ0VQQURDQ0FRb0NnZ0VCQU1TaUxOYkpEbllHS3lJYThhQ2lkelppbC81ZTV2ZWlUbWpvdkk1QQppTEExUkhzNDQ1VWJhS1VNQU1jc0YyTjYyVkZoMTZWM2dsVnFGMi8rRGpBZEVyVmtBTlV2WDgyTzE4SlRMc1JoCisyOUdQN0pwZnR2V0dJajNMdWRocEx2ZXAydS9kQVVpOVQwZW9JTnRNVkVPTVpMN2o4ODBOb0pQaWJqL255SXkKTGRVMmdJZlJpbGpwWGRFOWo5ckFBTnBtMmtkOE1LbTBOaEEzYXN6d2llYWdTZkFFNlV2UlRYSTQ0TFVVR2JXegpBaHdiWVJSZi9IejJ6Yk43UzlVSDJtR2RXeUEyRERZYXBCK0IrQ2tLM0JZQlJqRm5KYmFrT3lnbzlHczJHSjhCCkIyT1BCeFFkUVhqNkQ1djNQeHFuQU1BT0c5YTAyZEZueGdRN2doT1BpeTlsREpFQ0F3RUFBYU5UTUZFd0hRWUQKVlIwT0JCWUVGTFphSmhNc0FHY0o2WGFCeGM0R3RpU1VpTk1LTUI4R0ExVWRJd1FZTUJhQUZMWmFKaE1zQUdjSgo2WGFCeGM0R3RpU1VpTk1LTUE4R0ExVWRFd0VCL3dRRk1BTUJBZjh3RFFZSktvWklodmNOQVFFTEJRQURnZ0VCCkFCWkpleUFNOHgyTDgxckhycnRSL3FBcldUSEhrcFFHOThTd2hUanhKTllpd3JJanJTOGM1MHFleVhsamE4MWsKcnI2amNiSXA0dFd3bUxPQ2t1MStZZE95d01TYW4rWk9tWmxqWWpjMWdxZU9lR0VSS01LSi94bDJpZ0JmNnQxNgprTTd3RkhaTXVaL1dVL2ZVZEZVYXpkYWFheUU5V2U3ZnVSTXZxWjV1QWthbzFlN3ZDaWh3Rk92am11bzYybTRBCnlrWkNlc3lIQmhvc3NCR05Xb1N1elQvb1UyZnRXY1RiUmU3OHFPL25ONVZtV1poWXJ2aTNQL2ZsRnBNcjZsRk4KRzVaQUlMa29Uc2xtMzRwaEpkbDNQVzFkSTF1dXN3ZHJvUWdJSFJEVCttbndNRnR3aVhVNTFZaS9aY3grNTNibApBVUVWaWgvdVZ2Qmh1ZG1FLzFjUWxNdz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRREVvaXpXeVE1MkJpc2kKR3ZHZ29uYzJZcGYrWHViM29rNW82THlPUUlpd05VUjdPT09WRJpbERBREhMQmRqZXRsUllkZWxkNEpWYWhkdgovZzR3SFJLMVpBRFZMMS9OanRmQ1V5N0VZZnR2UmoreWFYN2IxaGlJOXk3bllhUzczcWRydjNRRkl2VTlIcUNECmJURlJEakdTKzQvUE5EYUNUNG00LzU4aU1pM1ZOb0NIMFlwWTZWM1JQWS9hd0FEYVp0cEhmRENwdERZUU4yck0KOElubW9FbndCT2xMMFUxeU9PQzFGQm0xc3dJY0cyRVVYL3g4OXMyemUwdlZCOXBoblZzZ05ndzJHcVFmZ2ZncApDdHdXQVVZeFp5VzJwRHNvS1BSck5oaWZBUWRqandjVUhVRjQrZytiOXo4YXB3REFEaHZXdE5uUlo4WUVPNElUCmo0c3ZaUXlSQWdNQkFBRUNnZ0VBSHFGb3ZMaXJNUVY2K0tBYjNic1JPUDZZMEw0MTJvT0ZGV0NUNXREMHVnWkMKT2JPOTkvOUNDTnZhenl2MkpNQUJWR1VhYzZNdlFXRDZiNjZ5eFJueVRTRmI0OW15WWRJTG1ERGZDeVo4UlhRNgovZTdqSFJtM3pyWTZyejZOcTlwZVdER0Z3RHNXMnNPSG01R0o2aWQ4MzNtaWlGT0kzam5IcVhMZ2RqSTg0NGFJCml3aGxjRHJuQlQxSFBRUktHVjZwSWVreDZUcEZ4bDlnZ2JTQnFFNDRnTkhlRUhSNTRpSGFwemlyMGdkNGlDN20KdnpsYU1FYlZRSytrNFZFdjl3MHo2MEJCVmhDYTNzV2oweHpRZTBmRjVmUTN6aENndUphRFIxVGozVTBMSy8yKwphNkdjL0ZBUWZwOVFGTHlZK1Y1V2QzZ1BUS0ZzZnMvVFlsVnUvTlllUVFLQmdRRDlRbC9HLzBDdjl4bktuaHBPCjcxbzFkTmdmTGxLRjBsRnVJUEI5QWdkMEROSW5wL3NXMjhqVmFWZVVKVzNQWFZueVc0ZHVYMVcyRGlndCtrWmQKbXlTSHk4SzlNVWdwS1J4YUpMckZ0Y0hiTmM1MkZ0WG1FYWEwQmY1cm05dTZPSkgrTTAvU2Fod1NJNFZMWk1RYwppaFdTQVUveXlRem9qMEphVDJLVzlINmxhUUtCZ1FER3d1ei8xN3RuajQ1MDNIZkhNT3E2aGpPSU5MQWdOdkxVCk1vSFBJcno1aFBRbER0SjM2NU8xRzZoaWZXZnFEd210anlSbVFSeHozS3Q0VGVjWUhWU3FzZzN2NWRyYmVHQ3YKK2pkZmEzTkZPYTUxUFl3MmFpZjdTa0d6aHZqYTVXZWxxeDAxdklRL2phb0hlQlVNNzFscEtoektPbW5WRFBOSQpYR3FCNEl5QTZRS0JnUUM5RTNDdUFLTXF2REJsTk9RdlNrTHU1ZXowV29FQnA2Tmp0UFBXWUUxd05xSXZPUm9jClZybjVta3ZvTG9sczV5VGY2N1dRa1Z4TUx3V1FUZWw2dVBqczZSTGFiSkNUS2o0Z2pvdGlUL0FLMklEcmFPRUkKZ3VVU1FlZFFMMnc3KzBBRHFBdFA3Q2hJNG53QmJabDhOUnNsaGhWS0RRKzJFRDVaYmlzTXlEeEZBUUtCZ0M5egpqZDB1aGNFZGxxYnprMnpza3IxaEdLQmw0NzV0SDkvbEJ2U0ttSThCWE1BVUg4OGRZTEFXSUVjVEpXSE5vVVBjCkxwWnk2UFlJTXErUCthSGFMc0pwcThZZ0cvWFZjVS9SN3JKTEZzUHFGMnBKL1ZWb1ZvODVsU0hsRVRoQkdGT0cKM0h4ZHV6em85elM5U0ZsRU14WldSWFZLS01ZQ1IzcDVCYnhuL1dNeEFvR0FZRmhteTF4NitJbjVTWHRyb0FsZgpmdEY0SUcxdlhsNnErd3hUN2lRcThzZ3ZuOXArSHR1cWtuWUtDMy9UN25PU2xoSVpmSWIvUGZoSVUzTWJwbG9ZCnBuTUtIZkJKR1psMFBqNjVJL09teDJ5cytJMmh0eXk2bzVDTWFZRU5ETUQzZ1NILzBsdDdoQVpxbnZHcW5qSjkKRWpTNXFBbzBBVEF1Q1Z6YkdPV2tnOW89Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+type: kubernetes.io/tls

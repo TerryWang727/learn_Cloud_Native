@@ -1,0 +1,61 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: wxk-hs-vs
+spec:
+  gateways:
+    - wxk-hs/wxk-gw
+  hosts: # 域名匹配
+    - hss.wxk.io
+    - hs.wxk.io
+  http:
+    - match:
+        - uri:
+            exact: "/not-delay"
+      rewrite:
+        uri: "/delay"
+      route:
+        - destination:
+            host: wxk-hs-service.wxk-hs.svc.cluster.local
+            port:
+              number: 80
+    - match:
+        - port: 80
+      route:
+        - destination:
+            host: wxk-hs-service.wxk-hs.svc.cluster.local
+            port:
+              number: 80
+    - match:
+        - port: 443
+      route:
+        - destination:
+            host: wxk-hs-service.wxk-hs.svc.cluster.local
+            port:
+              number: 80
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway # 对应 listener, 使istio增加对80端口的监听器， 然后根据VirtualService的规则做转发
+metadata:
+  name: wxk-gw
+  namespace: wxk-hs
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - hosts:
+        - hs.wxk.io
+      port:
+        name: http-default
+        number: 80
+        protocol: HTTP
+    - hosts:
+        - hss.wxk.io
+      port:
+        name: https-default
+        number: 443
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE #单向认证
+        credentialName: wxk-credential
+
