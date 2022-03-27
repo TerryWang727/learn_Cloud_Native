@@ -6,8 +6,10 @@
 考虑 open tracing 的接入。
 ```
 
+打包
+```
 make push
-
+```
 安装部署集群
 ```
 #部署
@@ -109,6 +111,7 @@ istioctl dashboard jaeger --address=IPADDR --browser=false
 kubectl apply -f jaeger.yaml
 
 -查看面板
+```
 istioctl dashboard jaeger --address=IPADDR --browser=false
 ```
 Access the httpserver via ingress
