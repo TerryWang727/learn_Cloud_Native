@@ -8,7 +8,7 @@
 
 make push
 
-安装部署集群\
+安装部署集群
 ```
 #部署
 make deployment
@@ -47,6 +47,9 @@ kubectl get svc -n istio-system
 
 - 卸载istio
 istioctl manifest generate --set profile=demo | kubectl delete -f -
+
+- 部署istio相关配置
+kubectl apply -f specs/istio-specs.yaml -n wxk-ns
 ```
 
 安全保证
@@ -57,7 +60,7 @@ kind: VirtualService
         - port: 443
       route:
         - destination:
-            host: dhtobb-httpserver-service
+            host: wxk-httpserver-service
             port:
               number: 80
 
@@ -96,6 +99,11 @@ open tracing 的接入
 
 2.tracing需要依赖sidecar
 ```
+```
+- 安装
+kubectl apply -f specs/jaeger.yaml
+- 查看面板
+istioctl dashboard jaeger --address=IPADDR --browser=false
 ```
 
 kubectl apply -f jaeger.yaml
